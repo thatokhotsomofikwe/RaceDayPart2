@@ -19,8 +19,10 @@ This is the RESTful API backend for the RaceDay system, built with ASP.NET Core 
 A GitHub Actions workflow is configured in `.github/workflows/dotnet-ci.yml`. It automatically builds the project and runs unit tests on every push to the `main` branch. 
 
 Successful Test and Build
+<img width="1366" height="768" alt="Screenshot 2026-10-11 111925" src="https://github.com/user-attachments/assets/c936aacd-c505-480a-9b87-89d9e89d2976" />
 
 Successful Workflow
+<img width="1366" height="768" alt="Screenshot 2026-10-11 111824" src="https://github.com/user-attachments/assets/060d0a32-b0ca-41e7-bbd7-9a792e47459b" />
 
 Unlisted YouTube Link
 
