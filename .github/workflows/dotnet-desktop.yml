@@ -1,12 +1,8 @@
-name: RaceDay Part 2 - CI
+name: RaceDay Part 2 CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -14,32 +10,48 @@ permissions:
 
 jobs:
   build:
-    name: Restore, Build and Test
+    name: Restore and Build API
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find project and .NET version
+      - name: Locate project file
         id: project
         shell: bash
         run: |
+          echo "Files in repository:"
+          find . -maxdepth 4 -type f \
+            \( -name '*.csproj' -o -name '*.sln' -o -name '*.slnx' \) \
+            -not -path '*/bin/*' \
+            -not -path '*/obj/*' \
+            -print
+
           PROJECT=$(find . -type f -name '*.csproj' \
             -not -path '*/bin/*' \
             -not -path '*/obj/*' \
+            ! -iname '*test*.csproj' \
             -print -quit)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: No C# project (.csproj) was found."
+            echo "::error::No API .csproj file found."
+            echo "Check that the project file was committed to GitHub."
             exit 1
           fi
 
-          FRAMEWORK=$(grep -oPm1 \
-            '(?<=<TargetFramework>)[^<]+' "$PROJECT" || true)
+          FRAMEWORK=$(sed -n \
+            's/.*<TargetFramework>\([^<]*\)<\/TargetFramework>.*/\1/p' \
+            "$PROJECT" | head -n 1)
 
           if [ -z "$FRAMEWORK" ]; then
-            echo "ERROR: Could not identify TargetFramework in $PROJECT"
+            FRAMEWORK=$(sed -n \
+              's/.*<TargetFrameworks>\([^<]*\)<\/TargetFrameworks>.*/\1/p' \
+              "$PROJECT" | head -n 1 | cut -d ';' -f 1)
+          fi
+
+          if [ -z "$FRAMEWORK" ]; then
+            echo "::error::Could not read TargetFramework from $PROJECT"
             exit 1
           fi
 
@@ -48,18 +60,19 @@ jobs:
             net9.0*) SDK="9.0.x" ;;
             net10.0*) SDK="10.0.x" ;;
             *)
-              echo "ERROR: Unsupported or unconfigured framework: $FRAMEWORK"
+              echo "::error::Unsupported target framework: $FRAMEWORK"
               exit 1
               ;;
           esac
 
           echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
           echo "sdk=$SDK" >> "$GITHUB_OUTPUT"
-          echo "Found project: $PROJECT"
-          echo "Target framework: $FRAMEWORK"
-          echo "Using .NET SDK: $SDK"
+          echo "framework=$FRAMEWORK" >> "$GITHUB_OUTPUT"
 
-      - name: Set up .NET
+          echo "Project found: $PROJECT"
+          echo "Framework: $FRAMEWORK"
+
+      - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ steps.project.outputs.sdk }}
@@ -73,7 +86,7 @@ jobs:
           --configuration Release
           --no-restore
 
-      - name: Run tests if available
+      - name: Run unit tests if available
         shell: bash
         run: |
           mapfile -t TEST_PROJECTS < <(
@@ -84,12 +97,10 @@ jobs:
           )
 
           if [ ${#TEST_PROJECTS[@]} -eq 0 ]; then
-            echo "No separate test project found."
-            echo "Test step skipped; API build was checked separately."
+            echo "No separate test project found; skipping tests."
           else
             for TEST_PROJECT in "${TEST_PROJECTS[@]}"; do
-              echo "Running tests in $TEST_PROJECT"
-              dotnet test "$TEST_PROJECT" \
-                --configuration Release
+              echo "Testing: $TEST_PROJECT"
+              dotnet test "$TEST_PROJECT" --configuration Release
             done
           fi
