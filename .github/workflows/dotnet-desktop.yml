@@ -1,106 +1,29 @@
-name: RaceDay Part 2 CI
+name: .NET CI
 
 on:
   push:
+    branches: [ main ]
   pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
-  build:
-    name: Restore and Build API
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Locate project file
-        id: project
-        shell: bash
-        run: |
-          echo "Files in repository:"
-          find . -maxdepth 4 -type f \
-            \( -name '*.csproj' -o -name '*.sln' -o -name '*.slnx' \) \
-            -not -path '*/bin/*' \
-            -not -path '*/obj/*' \
-            -print
-
-          PROJECT=$(find . -type f -name '*.csproj' \
-            -not -path '*/bin/*' \
-            -not -path '*/obj/*' \
-            ! -iname '*test*.csproj' \
-            -print -quit)
-
-          if [ -z "$PROJECT" ]; then
-            echo "::error::No API .csproj file found."
-            echo "Check that the project file was committed to GitHub."
-            exit 1
-          fi
-
-          FRAMEWORK=$(sed -n \
-            's/.*<TargetFramework>\([^<]*\)<\/TargetFramework>.*/\1/p' \
-            "$PROJECT" | head -n 1)
-
-          if [ -z "$FRAMEWORK" ]; then
-            FRAMEWORK=$(sed -n \
-              's/.*<TargetFrameworks>\([^<]*\)<\/TargetFrameworks>.*/\1/p' \
-              "$PROJECT" | head -n 1 | cut -d ';' -f 1)
-          fi
-
-          if [ -z "$FRAMEWORK" ]; then
-            echo "::error::Could not read TargetFramework from $PROJECT"
-            exit 1
-          fi
-
-          case "$FRAMEWORK" in
-            net8.0*) SDK="8.0.x" ;;
-            net9.0*) SDK="9.0.x" ;;
-            net10.0*) SDK="10.0.x" ;;
-            *)
-              echo "::error::Unsupported target framework: $FRAMEWORK"
-              exit 1
-              ;;
-          esac
-
-          echo "path=$PROJECT" >> "$GITHUB_OUTPUT"
-          echo "sdk=$SDK" >> "$GITHUB_OUTPUT"
-          echo "framework=$FRAMEWORK" >> "$GITHUB_OUTPUT"
-
-          echo "Project found: $PROJECT"
-          echo "Framework: $FRAMEWORK"
-
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ steps.project.outputs.sdk }}
+          dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore "${{ steps.project.outputs.path }}"
+        run: dotnet restore RaceDay.Tests/RaceDay.Tests.csproj
 
       - name: Build API
-        run: >
-          dotnet build "${{ steps.project.outputs.path }}"
-          --configuration Release
-          --no-restore
+        run: dotnet build RaceDay.API/RaceDay.API.csproj --configuration Release --no-restore
 
-      - name: Run unit tests if available
-        shell: bash
-        run: |
-          mapfile -t TEST_PROJECTS < <(
-            find . -type f \
-              \( -name '*Tests.csproj' -o -name '*Test.csproj' \) \
-              -not -path '*/bin/*' \
-              -not -path '*/obj/*'
-          )
-
-          if [ ${#TEST_PROJECTS[@]} -eq 0 ]; then
-            echo "No separate test project found; skipping tests."
-          else
-            for TEST_PROJECT in "${TEST_PROJECTS[@]}"; do
-              echo "Testing: $TEST_PROJECT"
-              dotnet test "$TEST_PROJECT" --configuration Release
-            done
-          fi
+      - name: Run unit tests
+        run: dotnet test RaceDay.Tests/RaceDay.Tests.csproj --configuration Release --verbosity normal
